@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?logo=python&logoColor=white)](#quick-start)
 [![OpenCV](https://img.shields.io/badge/OpenCV-DNN-5C3EE8?logo=opencv&logoColor=white)](#quick-start)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/leonryuu29/yolov3-traffic-counter/actions/workflows/ci.yml/badge.svg)](https://github.com/leonryuu29/yolov3-traffic-counter/actions/workflows/ci.yml)
 
 > 一个基于 YOLOv3 与 SORT 的车辆检测、跟踪、计数和速度估算演示项目。<br>
 > A computer-vision coursework project rebuilt into a reproducible, documented repository.
