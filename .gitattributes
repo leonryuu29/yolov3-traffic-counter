@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.weights binary
+*.onnx binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.jpg binary
+*.jpeg binary
+*.png binary

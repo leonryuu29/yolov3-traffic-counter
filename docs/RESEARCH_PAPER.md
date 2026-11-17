@@ -1,0 +1,269 @@
+# A Real-Time Traffic Monitoring System Based on YOLOv3 and SORT
+
+**Author:** Zhaoze Yu
+
+**Affiliation:** BIUH
+
+---
+
+### **Abstract**
+
+With the rapid development of urban transportation, intelligent traffic management has become a critical area of research. This paper presents a real-time traffic monitoring system designed to automatically detect, track, and analyze vehicle flow from video streams. The proposed system integrates two powerful algorithms: YOLOv3 (You Only Look Once, version 3) for robust and fast object detection, and SORT (Simple Online and Realtime Tracking) for efficient multi-object tracking. The system processes video footage to identify various types of vehicles, such as cars, trucks, and buses. Each detected vehicle is assigned a unique ID, and its trajectory is tracked across consecutive frames. Key traffic parameters, including vehicle count and estimated speed, are extracted from this tracking data. The YOLOv3 model provides the high-accuracy detections necessary for the tracker, while the SORT algorithm, which leverages a Kalman filter and the Hungarian algorithm, ensures consistent tracking even with temporary occlusions or detection failures. The implementation is primarily built using Python with the OpenCV library. Experimental results demonstrate that the system can effectively monitor traffic, providing valuable data for traffic flow analysis, congestion management, and urban planning. The combination of YOLOv3 and SORT proves to be a computationally efficient and effective solution for real-time traffic surveillance applications.
+
+**Keywords:** `Computer Vision`, `Object Detection`, `Vehicle Tracking`, `YOLOv3`, `SORT`, `Intelligent Transportation Systems`
+
+---
+
+### **I. Introduction**
+
+In the field of digital image processing, intelligent transportation systems (ITS) have emerged as a pivotal application, aiming to alleviate traffic congestion, enhance road safety, and improve overall transportation efficiency. A core component of ITS is the ability to automatically monitor and analyze traffic flow. Historically, this was accomplished using intrusive methods like inductive loops embedded in roadways or manual observation, which are often costly, difficult to maintain, and limited in the scope of data they can provide.
+
+The advent of computer vision and digital image processing has ushered in a new era of non-intrusive traffic monitoring. Early vision-based methods relied on traditional image processing techniques such as background subtraction, optical flow, and frame differencing. While effective in controlled environments, these methods often struggled with dynamic conditions like changing illumination, shadows, and camera jitter, leading to unreliable performance.
+
+The recent success of deep learning, particularly Convolutional Neural Networks (CNNs), has revolutionized the field of object detection. Models like R-CNN, Fast R-CNN, and Faster R-CNN introduced high-accuracy detection but were often too computationally intensive for real-time applications. The development of single-shot detectors, most notably the You Only Look Once (YOLO) family of models, struck a remarkable balance between speed and accuracy. YOLOv3, in particular, became a benchmark for real-time object detection.
+
+Following detection, tracking vehicles across frames is essential for gathering meaningful traffic statistics. This introduces the challenge of multi-object tracking (MOT). The tracking-by-detection paradigm has become the standard approach, where objects are first detected in each frame and then associated across frames. The Simple Online and Realtime Tracking (SORT) algorithm is a highly influential example of this paradigm. It is an efficient and pragmatic tracker that focuses on motion prediction and association, making it ideal for real-time scenarios.
+
+This paper presents the design and implementation of a complete traffic monitoring system that leverages these state-of-the-art techniques. **The research method adopted is to build a unified pipeline that integrates the YOLOv3 object detector for vehicle identification with the SORT algorithm for multi-vehicle tracking.** This system is capable of processing video streams to perform vehicle counting and speed estimation, providing a practical solution for modern traffic analysis.
+
+### **II. Methodology**
+
+#### **2.1 Mathematical Description of the Problem**
+
+Let a video sequence be represented as a series of frames $F = \{f_1, f_2, ..., f_T\}$, where $T$ is the total number of frames. For each frame $f_t$ at time $t$, the goal is to produce a set of object detections $D_t = \{d_{t,1}, d_{t,2}, ..., d_{t,N_t}\}$, where $N_t$ is the number of detected vehicles. Each detection $d_{t,i}$ is a tuple $(b_{t,i}, c_{t,i}, s_{t,i})$, where:
+-   $b_{t,i} = (x, y, w, h)$ is the bounding box defining the vehicle's location.
+-   $c_{t,i}$ is the class label (e.g., 'car', 'truck').
+-   $s_{t,i}$ is the confidence score of the detection.
+
+The multi-object tracking problem is to assign a consistent identity $id_j$ to each object across frames. We define a set of tracks $TR = \{tr_1, tr_2, ..., tr_M\}$, where $M$ is the total number of unique vehicles observed. Each track $tr_j$ is a time-ordered sequence of detections corresponding to the same physical object: $tr_j = \{d_{t,i} | t \in [t_{\text{start}}, t_{\text{end}}]\}$.
+
+The primary objectives can be formulated as:
+1.  **Vehicle Counting:** Given a virtual line $L$ defined in the image space, the total vehicle count $V$ is the cardinality of the set of tracks that cross this line. A track $tr_j$ crosses $L$ if its path intersects with $L$.
+2.  **Speed Estimation:** For a track $tr_j$ at time $t$, its instantaneous speed $v_{t,j}$ is estimated based on the displacement of its bounding box center between frame $t-1$ and $t$, scaled by a pixel-to-meter conversion factor.
+
+#### **2.2 Problem-Solving Methods**
+
+To address this problem, we adopt a two-stage, tracking-by-detection approach.
+
+##### **2.2.1 Vehicle Detection with YOLOv3**
+
+YOLOv3 frames object detection as a regression problem. It uses a single convolutional neural network to simultaneously predict multiple bounding boxes and class probabilities. The network divides the input image into an $S \times S$ grid. If the center of an object falls into a grid cell, that grid cell is responsible for detecting that object.
+
+The core of YOLOv3's training is its loss function, which is a multi-part function composed of localization loss, confidence loss, and classification loss.
+
+1.  **Localization Loss (Bounding Box Regression):** This measures the error in the predicted bounding box coordinates. It is a sum-of-squared-errors loss.
+    $$
+    L_{\text{coord}} = \lambda_{\text{coord}} \sum_{i=0}^{S^2} \sum_{j=0}^{B} \mathbb{1}_{ij}^{\text{obj}} \left[ (x_i - \hat{x}_i)^2 + (y_i - \hat{y}_i)^2 + (\sqrt{w_i} - \sqrt{\hat{w}_i})^2 + (\sqrt{h_i} - \sqrt{\hat{h}_i})^2 \right]
+    $$
+    where $\mathbb{1}_{ij}^{\text{obj}}$ is an indicator function that equals 1 if the $j$-th bounding box in cell $i$ is responsible for the object, and $\lambda_{\text{coord}}$ is a weighting factor that increases the importance of localization error.
+
+2.  **Confidence Loss (Objectness Score):** This measures the error in the confidence score for each bounding box. The loss is different for boxes that contain an object versus those that do not.
+    $$
+    L_{\text{conf}} = -\lambda_{\text{obj}} \sum_{i=0}^{S^2} \sum_{j=0}^{B} \mathbb{1}_{ij}^{\text{obj}} \log(\hat{C}_{ij}) - \lambda_{\text{noobj}} \sum_{i=0}^{S^2} \sum_{j=0}^{B} \mathbb{1}_{ij}^{\text{noobj}} \log(1 - \hat{C}_{ij})
+    $$
+    where $\lambda_{\text{obj}}$ and $\lambda_{\text{noobj}}$ are weighting factors to balance the loss between boxes with and without objects.
+
+3.  **Classification Loss:** For each grid cell that contains an object, this measures the error in predicting the object's class. It is typically a binary cross-entropy loss applied independently for each class.
+    $$
+    L_{\text{class}} = -\lambda_{\text{class}} \sum_{i=0}^{S^2} \mathbb{1}_{i}^{\text{obj}} \sum_{c \in \text{classes}} \left[ p_i(c) \log(\hat{p}_i(c)) + (1-p_i(c))\log(1-\hat{p}_i(c)) \right]
+    $$
+The total loss is a weighted sum of these components: $L = L_{\text{coord}} + L_{\text{conf}} + L_{\text{class}}$.
+
+##### **2.2.2 Vehicle Tracking with SORT**
+
+The SORT algorithm uses a "tracking-by-detection" framework. Its two key components are the Kalman Filter for motion prediction and the Hungarian algorithm for data association.
+
+**1. Kalman Filter for Motion Prediction:**
+Each tracked object is modeled with a linear constant velocity model. The state of each object is defined as a 7-dimensional vector:
+$$
+\mathbf{x} = [u, v, s, r, \dot{u}, \dot{v}, \dot{s}]^T
+$$
+where $(u, v)$ is the center of the bounding box, $s$ is the scale (area), and $r$ is the aspect ratio. The remaining variables are the respective velocities.
+
+The Kalman filter operates in two steps:
+-   **Predict:** The filter predicts the next state of the track based on the current state and the motion model.
+    $$
+    \hat{\mathbf{x}}_k^- = \mathbf{A} \hat{\mathbf{x}}_{k-1}
+    $$
+    $$
+    \mathbf{P}_k^- = \mathbf{A} \mathbf{P}_{k-1} \mathbf{A}^T + \mathbf{Q}
+    $$
+    where $\mathbf{A}$ is the state transition matrix, $\mathbf{Q}$ is the process noise covariance, and $\mathbf{P}$ is the state covariance matrix.
+
+-   **Update:** When a new measurement (a detection $\mathbf{z}_k$) is associated with the track, the state is updated.
+    $$
+    \mathbf{K}_k = \mathbf{P}_k^- \mathbf{H}^T (\mathbf{H} \mathbf{P}_k^- \mathbf{H}^T + \mathbf{R})^{-1}
+    $$
+    $$
+    \hat{\mathbf{x}}_k = \hat{\mathbf{x}}_k^- + \mathbf{K}_k (\mathbf{z}_k - \mathbf{H} \hat{\mathbf{x}}_k^-)
+    $$
+    $$
+    \mathbf{P}_k = (\mathbf{I} - \mathbf{K}_k \mathbf{H}) \mathbf{P}_k^-
+    $$
+    where $\mathbf{H}$ is the measurement matrix, $\mathbf{R}$ is the measurement noise covariance, and $\mathbf{K}_k$ is the Kalman gain.
+
+**2. Hungarian Algorithm for Data Association:**
+The association problem is to match the set of predicted tracks with the set of new detections. A cost matrix is constructed where the cost of assigning a detection to a track is the Intersection over Union (IoU) distance between them:
+$$
+\text{Cost}(i, j) = 1 - \text{IoU}(b_{\text{pred},i}, b_{\text{det},j})
+$$
+The Hungarian algorithm is then used to find the assignment that minimizes the total cost. Detections that are not assigned to any existing track will initiate new tracks. Tracks that are not assigned any detection for a certain number of frames (`max_age`) are terminated.
+
+#### **2.3 Method Discussion**
+
+The combination of YOLOv3 and SORT is particularly well-suited for this project. YOLOv3 provides the necessary speed and accuracy for real-time detection. Its ability to detect objects of different sizes is a significant advantage in traffic scenes. SORT complements YOLOv3 perfectly. It is computationally lightweight, as it only considers motion and IoU for association, avoiding the need for complex appearance-based feature extraction for re-identification. This makes the entire pipeline fast and efficient.
+
+The Kalman filter in SORT provides robustness against noisy or missing detections, which are common in real-world scenarios. By predicting the object's location, the system can maintain a track even if the detector fails for a few frames. The Hungarian algorithm ensures an optimal assignment of detections to trackers, minimizing identity switches.
+
+#### **2.4 Method Implementation**
+
+The system is implemented in Python, using OpenCV for video processing and its DNN module to run the YOLOv3 model. The implementation follows a clear pipeline.
+
+**1. Model Loading and Initialization:**
+The YOLOv3 network and the SORT tracker are initialized at the start.
+
+*Code from `traffic_detector.py`:*
+```python
+# Load YOLO model and class names
+net = cv2.dnn.readNet(WEIGHTS_PATH, CONFIG_PATH)
+with open(NAMES_PATH, "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
+# Initialize SORT tracker
+mot_tracker = Sort(max_age=SORT_MAX_AGE, min_hits=SORT_MIN_HITS, iou_threshold=0.3)
+```
+
+**2. Detection:**
+For each frame, a blob is created and passed through the YOLOv3 network. The raw outputs are parsed to get bounding boxes, confidences, and class IDs. Non-maximum suppression (NMS) is applied to filter out redundant boxes.
+
+*Code from `traffic_detector.py`:*
+```python
+# ... inside the main loop ...
+blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+net.setInput(blob)
+outs = net.forward(output_layers)
+
+# Parse YOLO output and apply NMS
+# ... (code for parsing 'outs') ...
+indexes = cv2.dnn.NMSBoxes(boxes, confidences, CONFIDENCE_THRESHOLD, NMS_THRESHOLD)
+```
+
+**3. Tracking:**
+The filtered detections are formatted and passed to the SORT tracker's `update` method. The tracker returns an array of active tracks, where each track contains the bounding box and a unique object ID.
+
+*Code from `sort.py` (the `update` method):*
+```python
+class Sort(object):
+    # ...
+    def update(self, dets=np.empty((0, 5))):
+        """
+        Params:
+          dets - a numpy array of detections in the format [[x1,y1,x2,y2,score],...]
+        Requires: frame_count to be incremented outside.
+        Returns a similar array, where the last column is the object ID.
+        """
+        self.frame_count += 1
+        # get predicted locations from existing trackers.
+        trks = np.zeros((len(self.trackers), 5))
+        # ... (predict step) ...
+
+        # Associate detections to trackers
+        matched, unmatched_dets, unmatched_trks = self.associate_detections_to_trackers(dets, trks, self.iou_threshold)
+
+        # update matched trackers with assigned detections
+        for m in matched:
+            self.trackers[m[1]].update(dets[m[0], :])
+
+        # create and initialise new trackers for unmatched detections
+        for i in unmatched_dets:
+            trk = KalmanBoxTracker(dets[i, :])
+            self.trackers.append(trk)
+
+        # ... (return active tracks and remove old ones) ...
+```
+
+**4. Data Processing (Counting and Speed Estimation):**
+The system iterates through the tracked objects. It maintains a history of each vehicle's position. A vehicle is counted if its track crosses a predefined horizontal line. Speed is estimated by calculating the pixel distance traveled between frames and converting it to km/h using a calibrated `PIXELS_PER_METER` ratio.
+
+*Code from `traffic_detector.py`:*
+```python
+# Vehicle Counting Logic
+# ... (check for lost tracks) ...
+for lost_id in lost_track_ids:
+    if lost_id not in counted_vehicles:
+        vehicle_data = tracked_vehicles[lost_id]
+        if vehicle_data['high_confidence']:
+            y_path = [p[1] for p in vehicle_data['path']]
+            if len(y_path) > 1 and min(y_path) < LINE_Y and max(y_path) >= LINE_Y:
+                vehicle_count += 1
+                counted_vehicles.add(lost_id)
+
+# Speed Estimation Logic
+def get_speed(prev_center, current_center, time_interval):
+    if time_interval == 0:
+        return None
+    distance_pixels = np.sqrt((current_center[0] - prev_center[0])**2 + (current_center[1] - prev_center[1])**2)
+    distance_meters = distance_pixels / PIXELS_PER_METER
+    speed_mps = distance_meters / time_interval
+    speed_kmh = speed_mps * 3.6
+    return speed_kmh
+```
+
+### **III. Experiments**
+
+#### **3.1 Algorithm Design**
+
+The overall algorithm is designed as a sequential pipeline that processes a video stream frame by frame:
+
+1.  **Input**: A video frame is captured.
+2.  **Detection**: The frame is fed into the YOLOv3 detector.
+3.  **Filtering**: The detections are filtered by confidence and class (only vehicles are kept). NMS is applied.
+4.  **Tracking**: The filtered detections are sent to the SORT tracker. The tracker performs prediction and association, and outputs a list of tracked objects with unique IDs.
+5.  **Analysis**: The system uses the tracking information to update vehicle paths, check for line crossings (for counting), and calculate speed.
+6.  **Output**: The frame is annotated with bounding boxes, track IDs, and calculated data (speed, count) and displayed.
+
+This design is modular, allowing for components like the detector or tracker to be potentially swapped out in the future.
+
+#### **3.2 Programming and Debugging**
+
+The system was developed in Python 3, relying on several key libraries:
+-   **OpenCV (`cv2`)**: For all image and video processing tasks, and for running the YOLOv3 model via its DNN module.
+-   **NumPy**: For efficient numerical operations, especially for handling bounding box coordinates and calculations.
+-   **SciPy**: Used within the SORT algorithm for the `linear_sum_assignment` function (Hungarian algorithm).
+
+During development, debugging focused on several key areas: ensuring the detection outputs were correctly formatted for the tracker, tuning the `max_age` and `min_hits` parameters of SORT to balance between track persistence and removal of false positives, and calibrating the `PIXELS_PER_METER` constant for reasonable speed estimates. Visual debugging, where bounding boxes and track IDs are drawn on each frame, was instrumental in verifying the tracker's performance.
+
+#### **3.3 Running**
+
+The experiment is conducted by running the main script (`traffic_detector.py`) from the command line. The script requires the pre-trained YOLOv3 model files (`yolov3.weights`, `yolov3.cfg`) and the class names file (`coco.names`). A sample video file (`traffic_video.mp4`) is used as the input source. The system processes this video and displays the output window with real-time annotations. The final vehicle count is printed to the console upon completion.
+
+### **IV. Presentation and Analysis of Experimental Results**
+
+Upon running the system on the test video, the following qualitative results were observed:
+
+1.  **Detection Performance**: The YOLOv3 detector successfully identified most vehicles in the frame, including cars and trucks, at various distances from the camera. The bounding boxes were generally accurate. Some distant or partially occluded vehicles were occasionally missed, which is an expected limitation of any detector.
+
+2.  **Tracking Performance**: The SORT tracker demonstrated robust performance. It was able to assign and maintain unique IDs for vehicles as they moved through the scene. In cases where the detector momentarily failed to detect a vehicle (e.g., due to occlusion by another vehicle), the Kalman filter's prediction allowed the track to persist, and the ID was correctly re-associated once the vehicle was detected again. Identity switches were infrequent for vehicles with clear trajectories.
+
+3.  **Counting and Speed Estimation**: The vehicle counting mechanism functioned as expected. When a tracked vehicle's path crossed the designated horizontal line, the count was incremented. The final count appeared to be a reasonable reflection of the traffic flow in the video. The speed estimation provided a dynamic reading for each vehicle. While the absolute accuracy of the speed depends heavily on precise camera calibration, the relative speeds (e.g., identifying faster vs. slower vehicles) were consistent.
+
+**Verification of Expected Results:**
+The experimental results confirm that the system successfully achieves the primary goals outlined in the problem description. It effectively integrates detection and tracking to create a functional traffic monitoring tool. The visual output clearly shows that vehicles are being detected, tracked, counted, and their speeds are estimated in real-time. The system proves to be a valid and practical application of modern computer vision techniques to solve a real-world problem.
+
+### **V. Summary**
+
+This paper detailed the development of a real-time traffic monitoring system using a combination of the YOLOv3 object detector and the SORT tracking algorithm. The system successfully performs vehicle detection, multi-object tracking, vehicle counting, and speed estimation from a standard video feed. The methodology, which leverages a deep learning-based detector and an efficient motion-based tracker, proves to be both effective and computationally feasible for real-time analysis.
+
+The implementation demonstrates a complete pipeline, from raw video input to the extraction of high-level traffic data. The experimental results verify that the system meets its design goals, providing a robust solution for automated traffic surveillance.
+
+Future work could explore several avenues for improvement. The tracking algorithm could be upgraded to DeepSORT, which incorporates appearance features to improve tracking through longer occlusions and reduce identity switches. The YOLOv3 model could be fine-tuned on a custom dataset of traffic scenes to improve detection accuracy for specific camera views or environmental conditions. Finally, the system could be extended to detect more complex traffic events, such as illegal turns, stopped vehicles, or accidents, further increasing its value as an intelligent transportation system tool.
+
+### **VI. List of References**
+
+[1] Redmon, J., & Farhadi, A. (2018). YOLOv3: An Incremental Improvement. *arXiv preprint arXiv:1804.02767*.
+
+[2] Bewley, A., Ge, Z., Ott, L., Ramos, F., & Upcroft, B. (2016). Simple Online and Realtime Tracking. In *2016 IEEE International Conference on Image Processing (ICIP)* (pp. 3464-3468). IEEE.
+
+[3] Kalman, R. E. (1960). A New Approach to Linear Filtering and Prediction Problems. *Journal of Basic Engineering, 82*(1), 35-45.
+
+[4] Kuhn, H. W. (1955). The Hungarian method for the assignment problem. *Naval research logistics quarterly, 2*(1-2), 83-97.

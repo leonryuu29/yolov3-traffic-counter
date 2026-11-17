@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: YOLOv3 Traffic Counter
+message: If you use this project or its documentation, please cite the repository and the YOLOv3/SORT papers.
+type: software
+authors:
+  - family-names: Yu
+    given-names: Zhaoze
+version: 1.0.0
+date-released: 2025-11-18
+license: GPL-3.0-only
+preferred-citation:
+  type: conference-paper
+  title: "YOLOv3: An Incremental Improvement"
+  authors:
+    - family-names: Redmon
+      given-names: Joseph
+    - family-names: Farhadi
+      given-names: Ali
+  year: 2018
+  url: "https://arxiv.org/abs/1804.02767"

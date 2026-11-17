@@ -1,0 +1,52 @@
+\documentclass{article}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\title{Core Improvements for Vehicle Detection and Counting Script}
+\author{Gemini AI Assistant}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Overview}
+The Python script, \texttt{traffic\_detector.py}, has undergone significant optimizations to enhance its accuracy, stability, and efficiency for real-time vehicle detection and counting. The following sections detail the core improvements implemented.
+
+\section{Enhanced Detection and Tracking Accuracy}
+
+\subsection{Increased YOLO Input Resolution}
+The input resolution for the YOLOv3 model was increased from a smaller size (e.g., \(320 \times 320\)) to \(416 \times 416\) pixels. This larger resolution provides the neural network with more detailed information for each frame, leading to a substantial improvement in detection accuracy. It is particularly effective at correctly identifying smaller, distant, or partially occluded vehicles that might have been missed at lower resolutions.
+
+\subsection{Fine-Tuned SORT Tracking Parameters}
+The parameters for the SORT (Simple Online and Realtime Tracking) algorithm were rigorously fine-tuned to ensure tracking stability and reliability over long operational periods.
+\begin{itemize}
+    \item \texttt{CONFIDENCE\_THRESHOLD} was increased to \texttt{0.4}. This ensures that only high-confidence detections are passed to the tracker, effectively filtering out most false positives.
+    \item \texttt{SORT\_MAX\_AGE} was reduced to \texttt{30} frames. This makes the tracker "forget" lost objects more quickly, reducing the likelihood of re-assigning an old ID to a new vehicle, which is a common cause of ID switching.
+    \item \texttt{SORT\_MIN\_HITS} was increased to \texttt{3} frames. A detection must be consistently present for several frames before it is considered a valid track. This prevents spurious, short-lived detections from creating invalid trajectories.
+\end{itemize}
+
+\section{Robust Counting Logic and Performance Efficiency}
+
+\subsection{Real-Time Line-Crossing Algorithm}
+The vehicle counting logic was completely redesigned for immediate and robust counting. Instead of the previous method, which counted a vehicle only after its tracking trajectory was lost, the new system counts a vehicle at the exact moment its center point crosses the predefined counting line. This provides real-time results and is resilient to tracking instabilities, as it does not depend on the lifecycle of the track.
+
+\subsection{Memory and CPU Optimizations}
+Several optimizations were introduced to ensure the script runs efficiently without consuming excessive resources over time.
+\begin{itemize}
+    \item \textbf{Efficient Path Storage:} The script now uses \texttt{collections.deque} with a fixed maximum length to store the path history for each vehicle. This acts as a sliding window of recent positions, preventing the path data from growing indefinitely and consuming all available memory.
+    \item \textbf{Optimized Speed Calculation:} Speed is now calculated using the video's constant Frames Per Second (FPS) to determine the time interval between frames. This is more accurate and computationally efficient than calculating the time delta on every loop iteration.
+\end{itemize}
+
+\section{Improved Visualization}
+
+\subsection{Informative Bounding Box Display}
+The visual feedback on the output video has been made more intuitive and informative.
+\begin{itemize}
+    \item \textbf{Visual Counting Cue:} Bounding boxes of counted vehicles change color (green for one direction, yellow for the other), providing an immediate and clear visual confirmation that a vehicle has been registered.
+    \item \textbf{Confidence Score Display:} The text displayed on each bounding box was changed from showing an internal tracking ID to showing the vehicle's class and the model's confidence score (e.g., \texttt{car 0.98}). This offers direct insight into the performance and certainty of the underlying detection model.
+\end{itemize}
+
+\end{document}
